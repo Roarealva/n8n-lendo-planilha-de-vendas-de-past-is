@@ -1,0 +1,143 @@
+{
+  "name": "Assistente de Insights Automático - Vendas de Pastéis",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [1],
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "trigger-semanal",
+      "name": "Disparo Semanal (Segunda 8h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-200, 300]
+    },
+    {
+      "parameters": {},
+      "id": "trigger-manual",
+      "name": "Disparo Manual (para testar)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-200, 460]
+    },
+    {
+      "parameters": {
+        "fileSelector": "/caminho/completo/para/vendas_pasteis.xlsx",
+        "options": {}
+      },
+      "id": "ler-arquivo",
+      "name": "Ler Planilha (arquivo local)",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [40, 380]
+    },
+    {
+      "parameters": {
+        "operation": "fromFile",
+        "options": {}
+      },
+      "id": "converter-planilha",
+      "name": "Converter Excel em Dados",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [280, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agrupa os dados por sabor e calcula totais + tendência (última semana vs. anterior)\nconst linhas = items.map(item => item.json);\n\nconst semanas = [...new Set(linhas.map(l => l.semana))];\nconst ultimaSemana = semanas[semanas.length - 1];\nconst semanaAnterior = semanas[semanas.length - 2];\n\nconst sabores = [...new Set(linhas.map(l => l.sabor))];\n\nlet resumo = [];\nlet totalGeral = 0;\n\nfor (const sabor of sabores) {\n  const linhaAtual = linhas.find(l => l.semana === ultimaSemana && l.sabor === sabor);\n  const linhaAnterior = linhas.find(l => l.semana === semanaAnterior && l.sabor === sabor);\n\n  const qtdAtual = linhaAtual ? linhaAtual.quantidade : 0;\n  const qtdAnterior = linhaAnterior ? linhaAnterior.quantidade : 0;\n  const valorAtual = linhaAtual ? linhaAtual.valor_total : 0;\n\n  const variacao = qtdAnterior > 0\n    ? (((qtdAtual - qtdAnterior) / qtdAnterior) * 100).toFixed(1)\n    : \"N/A\";\n\n  totalGeral += valorAtual;\n\n  resumo.push(\n    `${sabor}: ${qtdAtual} unidades (R$ ${valorAtual.toFixed(2)}) | variação vs. semana anterior: ${variacao}%`\n  );\n}\n\nconst textoResumo = `Dados da ${ultimaSemana} (Pastelaria Mundial):\\n` +\n  resumo.join(\"\\n\") +\n  `\\nFaturamento total da semana: R$ ${totalGeral.toFixed(2)}`;\n\nreturn [{ json: { resumo_dados: textoResumo, faturamento_total: totalGeral } }];"
+      },
+      "id": "agregar-dados",
+      "name": "Calcular Totais e Variações",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [\n    {\n      parts: [\n        {\n          text: `Você é um assistente de análise de dados para uma pastelaria. Com base nos dados de vendas abaixo, escreva um resumo curto em português (máximo 5 linhas), destacando: 1) principais variações de vendas por sabor, 2) algum alerta relevante (ex: queda forte em algum sabor), 3) uma tendência que vale observar. Seja direto e objetivo, sem enrolação.\\n\\nDados:\\n${$json.resumo_dados}`\n        }\n      ]\n    }\n  ]\n}) }}"
+      },
+      "id": "gerar-insight-ia",
+      "name": "Gerar Insight com IA (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai o texto gerado pela IA (formato de resposta do Gemini)\nconst resposta = items[0].json;\nconst textoIA = resposta.candidates && resposta.candidates[0] && resposta.candidates[0].content\n  ? resposta.candidates[0].content.parts[0].text\n  : \"Não foi possível gerar o insight.\";\nreturn [{ json: { mensagem_final: `📊 Insight semanal - Pastelaria Mundial\\n\\n${textoIA}` } }];"
+      },
+      "id": "formatar-mensagem",
+      "name": "Formatar Mensagem Final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{$credentials.accountSid}}/Messages.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "sendBody": true,
+        "specifyBody": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "From", "value": "whatsapp:+14155238886" },
+            { "name": "To", "value": "whatsapp:+55SEUNUMEROAQUI" },
+            { "name": "Body", "value": "={{ $json.mensagem_final }}" }
+          ]
+        }
+      },
+      "id": "enviar-whatsapp",
+      "name": "Enviar por WhatsApp (Twilio)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 380]
+    }
+  ],
+  "connections": {
+    "Disparo Semanal (Segunda 8h)": {
+      "main": [[{ "node": "Ler Planilha (arquivo local)", "type": "main", "index": 0 }]]
+    },
+    "Disparo Manual (para testar)": {
+      "main": [[{ "node": "Ler Planilha (arquivo local)", "type": "main", "index": 0 }]]
+    },
+    "Ler Planilha (arquivo local)": {
+      "main": [[{ "node": "Converter Excel em Dados", "type": "main", "index": 0 }]]
+    },
+    "Converter Excel em Dados": {
+      "main": [[{ "node": "Calcular Totais e Variações", "type": "main", "index": 0 }]]
+    },
+    "Calcular Totais e Variações": {
+      "main": [[{ "node": "Gerar Insight com IA (Gemini)", "type": "main", "index": 0 }]]
+    },
+    "Gerar Insight com IA (Gemini)": {
+      "main": [[{ "node": "Formatar Mensagem Final", "type": "main", "index": 0 }]]
+    },
+    "Formatar Mensagem Final": {
+      "main": [[{ "node": "Enviar por WhatsApp (Twilio)", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}
