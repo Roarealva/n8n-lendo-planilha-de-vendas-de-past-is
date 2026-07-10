@@ -1,4 +1,4 @@
-# 📊 Assistente de Insights Automático para Vendas com n8n + IA
+# 📊 Assistente de Insights Automático para Vendas com n8n + IA de uma planilha de Pastéis com envio por whatsapp
 
 Simplesmente incrivel, eu era proprietario de uma Pastelaria Mundial Arealva, com uma simples coleta de dados o N8N trata os dados a IA analisa e faz envio das informacoes pelo twilio, voce recebe automaticamente as insights estrategicas.
 
